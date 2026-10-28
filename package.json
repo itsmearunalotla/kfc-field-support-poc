@@ -1,0 +1,12 @@
+{
+  "name": "ekfc-field-support-api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Interview POC: a small API deployed to Azure Container Apps",
+  "scripts": {
+    "start": "node app/server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

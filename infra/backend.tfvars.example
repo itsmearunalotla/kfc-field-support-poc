@@ -1,0 +1,5 @@
+# Copy to backend.tfvars and fill from scripts/bootstrap-state.sh output.
+resource_group_name  = "ekfc-poc-tfstate-rg"
+storage_account_name = "<globally-unique-lowercase-name>"
+container_name       = "tfstate"
+key                  = "field-support/dev.tfstate"
