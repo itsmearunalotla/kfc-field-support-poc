@@ -21,7 +21,7 @@ Or run the container:
 docker build -t field-support-api:local .
 docker run --rm -p 3000:3000 field-support-api:local
 Azure and GitHub setup
-Use a dedicated Azure subscription or resource group for the interview POC. The workflow's Terraform identity needs Contributor and User Access Administrator on the deployment scope because Terraform creates resources and an ACR role assignment. It also needs Storage Blob Data Contributor on the Terraform state storage account. Scope these roles as narrowly as your setup allows.
+Use a dedicated Azure subscription or resource group for the POC. The workflow's Terraform identity needs Contributor and User Access Administrator on the deployment scope because Terraform creates resources and an ACR role assignment. It also needs Storage Blob Data Contributor on the Terraform state storage account. Scope these roles as narrowly as your setup allows.
 1. Create a public GitHub repository and push this project to its main branch.
 2. Sign in to Azure CLI, select the subscription, and initialize and validate the Terraform state configuration:
    az login
@@ -54,7 +54,7 @@ Deployment evidence and URL
 After the first successful POC CI/CD run, copy the public API URL from the run summary and verify /health and /api/info. Add the URL and screenshots of the successful workflow run here before submission:
 - Deployed URL: <add after deployment>
 - Pipeline screenshot: <add successful run screenshot>
-The interview brief allows deleting Azure resources after capturing evidence. Run terraform -chdir=infra destroy from a trusted machine with the same backend configuration, or delete the deployment resource group in Azure. Keep or delete the separate state storage resource group based on whether you need to retain Terraform state.
+The brief allows deleting Azure resources after capturing evidence. Run terraform -chdir=infra destroy from a trusted machine with the same backend configuration, or delete the deployment resource group in Azure. Keep or delete the separate state storage resource group based on whether you need to retain Terraform state.
 Cost and cleanup
 This is a short-lived demo. Azure Container Apps can scale to zero, but Log Analytics ingestion/retention and the storage account can incur charges. The Terraform uses Standard ACR to match the current free-account offer for eligible new customers; confirm the free allowance in your subscription before deploying. Check current pricing for your region and delete resources after capturing the required evidence. The separately bootstrapped state store is not managed by the main Terraform configuration.
 Notes for the walkthrough
