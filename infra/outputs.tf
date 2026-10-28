@@ -9,10 +9,8 @@ output "registry_name" {
 output "registry_login_server" {
   value = azurerm_container_registry.poc.login_server
 }
-
 output "container_app_name" {
   value = azurerm_container_app.api.name
-}
 }
 
 output "api_url" {
