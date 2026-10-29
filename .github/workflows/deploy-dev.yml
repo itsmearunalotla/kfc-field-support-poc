@@ -9,31 +9,28 @@ on:
 permissions:
   contents: read
 
-# Prevent two deployments to the same branch from running at once.
 concurrency:
   group: field-support-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  # Run the reusable tests and checks before touching Azure.
-  build:
-    name: Run build and checks
+  checks:
+    name: Run checks
     uses: ./.github/workflows/build.yml
 
-  # Provision or update Azure resources, then pass their names to the deploy job.
-  infra:
+  infrastructure:
     name: Provision Azure infrastructure
-    needs: build
+    needs: checks
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write
     outputs:
-      registry_name: ${{ steps.outputs.outputs.registry_name }}
-      registry_login_server: ${{ steps.outputs.outputs.registry_login_server }}
-      app_name: ${{ steps.outputs.outputs.container_app_name }}
-      resource_group: ${{ steps.outputs.outputs.resource_group_name }}
+      registry_name: ${{ steps.terraform_outputs.outputs.registry_name }}
+      registry_login_server: ${{ steps.terraform_outputs.outputs.registry_login_server }}
+      app_name: ${{ steps.terraform_outputs.outputs.container_app_name }}
+      resource_group: ${{ steps.terraform_outputs.outputs.resource_group_name }}
     env:
       ARM_USE_OIDC: "true"
       ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
@@ -47,14 +44,14 @@ jobs:
         with:
           terraform_version: 1.9.8
 
-      - name: Sign in to Azure with GitHub OIDC
+      - name: Sign in to Azure
         uses: azure/login@v3
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Connect Terraform to remote state
+      - name: Initialize Terraform
         run: |
           terraform -chdir=infra init -input=false \
             -backend-config="resource_group_name=${{ vars.TFSTATE_RESOURCE_GROUP || 'ekfc-poc-tfstate-rg' }}" \
@@ -73,18 +70,17 @@ jobs:
       - name: Apply Terraform plan
         run: terraform -chdir=infra apply -input=false -auto-approve tfplan
 
-      - name: Export Azure resource names
-        id: outputs
+      - name: Export Terraform outputs
+        id: terraform_outputs
         run: |
           echo "registry_name=$(terraform -chdir=infra output -raw registry_name)" >> "$GITHUB_OUTPUT"
           echo "registry_login_server=$(terraform -chdir=infra output -raw registry_login_server)" >> "$GITHUB_OUTPUT"
           echo "container_app_name=$(terraform -chdir=infra output -raw container_app_name)" >> "$GITHUB_OUTPUT"
           echo "resource_group_name=$(terraform -chdir=infra output -raw resource_group_name)" >> "$GITHUB_OUTPUT"
 
-  # Build the API image, push it to ACR, then update the Container App.
-  app:
+  deploy:
     name: Build and deploy API
-    needs: infra
+    needs: infrastructure
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
@@ -93,7 +89,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Sign in to Azure with GitHub OIDC
+      - name: Sign in to Azure
         uses: azure/login@v3
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
@@ -105,10 +101,10 @@ jobs:
         with:
           node-version: 22
 
-      - name: Build API container image
+      - name: Build API image
         env:
-          REGISTRY_NAME: ${{ needs.infra.outputs.registry_name }}
-          REGISTRY_LOGIN_SERVER: ${{ needs.infra.outputs.registry_login_server }}
+          REGISTRY_NAME: ${{ needs.infrastructure.outputs.registry_name }}
+          REGISTRY_LOGIN_SERVER: ${{ needs.infrastructure.outputs.registry_login_server }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
           az acr login --name "$REGISTRY_NAME"
@@ -122,25 +118,25 @@ jobs:
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: image
-          image-ref: "${{ needs.infra.outputs.registry_login_server }}/field-support-api:${{ github.sha }}"
+          image-ref: "${{ needs.infrastructure.outputs.registry_login_server }}/field-support-api:${{ github.sha }}"
           format: table
           severity: HIGH,CRITICAL
           exit-code: "0"
 
       - name: Push image to ACR
         env:
-          REGISTRY_LOGIN_SERVER: ${{ needs.infra.outputs.registry_login_server }}
+          REGISTRY_LOGIN_SERVER: ${{ needs.infrastructure.outputs.registry_login_server }}
           IMAGE_TAG: ${{ github.sha }}
         run: docker push "$REGISTRY_LOGIN_SERVER/field-support-api:$IMAGE_TAG"
 
-      - name: Install Container Apps CLI extension
+      - name: Install Container Apps extension
         run: az extension add --name containerapp --upgrade
 
-      - name: Deploy image to Container Apps
+      - name: Deploy API image
         env:
-          REGISTRY_LOGIN_SERVER: ${{ needs.infra.outputs.registry_login_server }}
-          RESOURCE_GROUP: ${{ needs.infra.outputs.resource_group }}
-          CONTAINER_APP: ${{ needs.infra.outputs.app_name }}
+          REGISTRY_LOGIN_SERVER: ${{ needs.infrastructure.outputs.registry_login_server }}
+          RESOURCE_GROUP: ${{ needs.infrastructure.outputs.resource_group }}
+          CONTAINER_APP: ${{ needs.infrastructure.outputs.app_name }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
           az containerapp update \
@@ -148,10 +144,10 @@ jobs:
             --resource-group "$RESOURCE_GROUP" \
             --image "$REGISTRY_LOGIN_SERVER/field-support-api:$IMAGE_TAG"
 
-      - name: Check API health and publish URLs
+      - name: Verify deployment and publish URLs
         env:
-          RESOURCE_GROUP: ${{ needs.infra.outputs.resource_group }}
-          CONTAINER_APP: ${{ needs.infra.outputs.app_name }}
+          RESOURCE_GROUP: ${{ needs.infrastructure.outputs.resource_group }}
+          CONTAINER_APP: ${{ needs.infrastructure.outputs.app_name }}
         run: |
           URL=$(az containerapp show \
             --name "$CONTAINER_APP" \
@@ -159,29 +155,30 @@ jobs:
             --query properties.configuration.ingress.fqdn \
             --output tsv)
 
-          for attempt in {1..12}; do
-            if curl --fail --silent --show-error "https://$URL/health"; then
+          for attempt in {1..24}; do
+            INFO=$(curl --fail --silent --max-time 5 "https://$URL/api/info" || true)
+
+            if echo "$INFO" | jq --exit-status \
+              --arg commit "$GITHUB_SHA" \
+              '.commit == $commit and .environment == "dev"' > /dev/null 2>&1; then
               break
             fi
 
-            if [ "$attempt" -eq 12 ]; then
-              echo "API health check failed after 12 attempts."
+            if [ "$attempt" -eq 24 ]; then
+              echo "Timed out waiting for the deployed commit."
               exit 1
             fi
 
             sleep 10
           done
 
-          INFO=$(curl --fail --silent --show-error "https://$URL/api/info")
+          curl --fail --silent --show-error "https://$URL/health"
           echo "$INFO" | jq .
-          echo "$INFO" | jq --exit-status \
-            --arg commit "$GITHUB_SHA" \
-            '.commit == $commit and .environment == "dev"'
 
           {
-            echo "Deployed API: https://$URL"
+            echo "API: https://$URL"
             echo "Health: https://$URL/health"
             echo "Info: https://$URL/api/info"
             echo "Tickets: https://$URL/api/tickets"
-            echo "Deployed commit: $GITHUB_SHA"
+            echo "Commit: $GITHUB_SHA"
           } >> "$GITHUB_STEP_SUMMARY"
