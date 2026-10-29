@@ -69,9 +69,6 @@ jobs:
       ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
       ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
       ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-      TF_VAR_location: ${{ vars.AZURE_LOCATION || 'uaenorth' }}
-      TF_VAR_environment: dev
-      TF_VAR_name_prefix: ${{ vars.RESOURCE_PREFIX || 'ekfc-fs' }}
       TF_IN_AUTOMATION: "true"
     steps:
       - uses: actions/checkout@v5

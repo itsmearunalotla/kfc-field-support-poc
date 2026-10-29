@@ -1,0 +1,6 @@
+name_prefix         = "ekfc-fs"
+location            = "uaenorth"
+environment         = "dev"
+resource_group_name = "ekfc-fs-dev-rg"
+app_name            = "ekfc-field-support-api"
+app_version         = "1.0.0"

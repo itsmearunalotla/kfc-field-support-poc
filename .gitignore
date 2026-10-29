@@ -3,6 +3,6 @@
 *.tfstate.*
 *.tfplan
 *.tfvars
-!*.tfvars.example
+!infra/dev.tfvars
 crash.log
 .DS_Store
