@@ -54,8 +54,7 @@ test("creates and returns a support ticket", async () => {
 
   assert.equal(response.status, 201);
 
-  const result = await response.json();
-  const ticket = result.ticket ?? result;
+  const ticket = await response.json();
 
   assert.equal(ticket.title, "Printer is offline");
   assert.equal(ticket.description, "The warehouse printer is not responding.");
@@ -89,17 +88,17 @@ test("lists tickets after one is created", async () => {
   const response = await fetch(`${baseUrl}/api/tickets`);
   assert.equal(response.status, 200);
 
-  const result = await response.json();
-  const tickets = result.tickets ?? result;
+  const { tickets } = await response.json();
 
   assert.equal(tickets.length, 1);
   assert.equal(tickets[0].title, "Printer is offline");
 });
-test('rejects a null ticket body', async () => {
+
+test("rejects a null ticket body", async () => {
   const response = await fetch(`${baseUrl}/api/tickets`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: 'null',
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: "null",
   });
 
   assert.equal(response.status, 400);
