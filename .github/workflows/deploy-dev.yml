@@ -176,7 +176,7 @@ jobs:
           echo "$INFO" | jq .
           echo "$INFO" | jq --exit-status \
             --arg commit "$GITHUB_SHA" \
-            '.commit == $commit and .environment == "dev'
+            '.commit == $commit and .environment == "dev"'
 
           {
             echo "Deployed API: https://$URL"
