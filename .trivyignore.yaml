@@ -1,0 +1,7 @@
+# GitHub-hosted runners need the state backend's public endpoint.
+# Access is protected with Entra ID OIDC and private blob containers.
+# Use a private runner/VNet before removing this exception.
+misconfigurations:
+  - id: AZU-0012
+    paths:
+      - infra/bootstrap-state/main.tf
