@@ -1,9 +1,43 @@
 # POC evidence screenshots
 
-Add screenshots from the actual GitHub Actions deployment and API responses before submission:
+These Azure screenshots show the resources used by the Field Support API POC. Account email and subscription IDs are redacted in the applicable images.
 
-- `actions-success.png`: the successful main-branch deployment run and its summary.
-- `api-health.png`: the live `/health` response.
-- `api-info.png`: the live `/api/info` response, including the deployed commit.
+## Terraform remote state
 
-Use genuine screenshots from the completed run. Hide access tokens and other credentials before committing; do not edit the status or response shown.
+The `tfstate` container contains the `dev.tfstate` state file.
+
+![Terraform state blob](azure-terraform-state-blob.png)
+
+## Container App revision
+
+The Container App has an active revision and is scaled to zero while idle.
+
+![Container App revision](azure-container-app-revisions.png)
+
+## Azure resource groups
+
+The subscription contains separate application and Terraform state resource groups.
+
+![Azure resource groups](azure-resource-groups.png)
+
+## Application resources
+
+The application resource group contains the Container App, Container Apps environment, Log Analytics workspace, managed identity, and registry.
+
+![Application resource group](azure-app-resource-group.png)
+
+## Terraform state resources
+
+The state resource group contains the managed identity and storage account.
+
+![Terraform state resource group](azure-state-resource-group.png)
+
+## Deployment and API evidence still needed
+
+After the updated main-branch deployment succeeds, add:
+
+- `actions-success.png` — successful GitHub Actions deployment and run summary.
+- `api-health.png` — live `/health` response.
+- `api-info.png` — live `/api/info` response showing the deployed commit.
+
+Hide credentials before committing screenshots. Keep the deployment status and API responses unchanged.
