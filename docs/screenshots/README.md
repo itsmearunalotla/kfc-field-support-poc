@@ -38,12 +38,12 @@ This screenshot shows the User Access Administrator assignment for the GitHub Ac
 
 ![User Access Administrator assignment](azure-github-identity-user-access-admin.png)
 
-## Deployment and API evidence still needed
+## Deployment and API evidence
 
-Add these genuine screenshots after the latest main-branch deployment succeeds:
+These screenshots document the successful main-branch deployment and live API responses:
 
-- `actions-success.png` — successful GitHub Actions deployment and run summary.
-- `api-health.png` — live `/health` response.
-- `api-info.png` — live `/api/info` response showing the deployed commit.
+- [GitHub Actions deployment](actions-success.png) — successful workflow run and job summary.
+- [API health](api-health.png) — live `/health` response.
+- [API information](api-info.png) — live `/api/info` response, including the deployed commit.
 
-Hide credentials before committing screenshots. Keep the deployment status and API responses unchanged.
+The Azure screenshots above document the application resources, remote state, and GitHub Actions identity. Do not include credentials or access tokens in screenshots.
