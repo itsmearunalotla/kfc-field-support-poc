@@ -27,14 +27,8 @@ variable "app_name" {
   default     = "ekfc-field-support-api"
 }
 
-variable "app_version" {
-  description = "API version exposed by /api/info."
-  type        = string
-  default     = "1.0.0"
-}
-
 variable "resource_group_name" {
-  description = "Existing resource group for the POC resources."
+  description = "Resource group managed by Terraform for the POC resources."
   type        = string
   default     = "ekfc-fs-dev-rg"
 }
