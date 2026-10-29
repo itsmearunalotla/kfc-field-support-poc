@@ -100,6 +100,11 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
       - name: Build API container image
         env:
           REGISTRY_NAME: ${{ needs.infra.outputs.registry_name }}
@@ -171,7 +176,7 @@ jobs:
           echo "$INFO" | jq .
           echo "$INFO" | jq --exit-status \
             --arg commit "$GITHUB_SHA" \
-            '.commit == $commit and .environment == "dev"
+            '.commit == $commit and .environment == "dev'
 
           {
             echo "Deployed API: https://$URL"
