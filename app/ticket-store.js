@@ -71,7 +71,8 @@ class AzureTableTicketStore {
     const token = await response.json();
     this.accessToken = token.access_token;
     this.tokenExpiresAt =
-      Number(token.expires_on) * 1000 || Date.now() + Number(token.expires_in || 3600) * 1000;
+      Number(token.expires_on) * 1000 ||
+      Date.now() + Number(token.expires_in || 3600) * 1000;
 
     return this.accessToken;
   }
@@ -111,16 +112,19 @@ class AzureTableTicketStore {
         method: 'POST',
         body: { TableName: this.tableName }
       }).catch(async (error) => {
-        // Azure returns 409 when the table already exists. Verify with a query
-        // so other errors, including authorization failures, still surface.
         if (!String(error.message).endsWith('_409')) {
           this.tableReady = null;
           throw error;
         }
 
-        const queryUrl = new URL(`${this.endpoint}/${this.tableName}()`);
-        queryUrl.searchParams.set('$top', '1');
-        await this.request(queryUrl);
+        try {
+          const queryUrl = new URL(`${this.endpoint}/${this.tableName}()`);
+          queryUrl.searchParams.set('$top', '1');
+          await this.request(queryUrl);
+        } catch (queryError) {
+          this.tableReady = null;
+          throw queryError;
+        }
       });
     }
 
