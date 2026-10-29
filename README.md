@@ -1,64 +1,125 @@
-EKFC Field Support API POC
+# EKFC Field Support API POC
 
-A small Node.js API deployed to Azure Container Apps. GitHub Actions uses OIDC to authenticate to Azure, Terraform provisions the infrastructure, and the workflow builds and deploys each commit to Azure Container Registry (ACR).
+A small Node.js API deployed to Azure Container Apps. This proof of concept demonstrates Terraform, GitHub Actions, and OIDC-based deployment to Azure.
 
-Architecture
-GitHub Actions (OIDC)
-  ├─ Terraform -> Resource Group, ACR, Log Analytics, Container Apps Environment, Container App
-  └─ Build -> ACR -> update Container App
+It is a deployment demo, not a complete field-support product. Ticket data is stored in memory and is lost when the app restarts.
 
-Terraform state -> Azure Storage (Blob)
-The API exposes:
-- GET /health -> 200 and {"status":"ok"}
-- GET /api/info -> app name, version, and environment
-The Container App uses a managed identity to pull from ACR. No application or Azure credentials are stored in the repository. Container Apps scale to zero when idle; Azure may still charge for the registry, logging, and storage resources.
-Run locally
-Requirements: Node.js 20+ and Docker (optional).
+## Architecture
+
+```mermaid
+flowchart TD
+  client["API client"] --> app["Azure Container App"]
+  actions["GitHub Actions"] -->|"OIDC"| azure["Azure"]
+  actions -->|"Build and push image"| acr["Azure Container Registry"]
+  azure --> app
+  app -->|"Managed identity: AcrPull"| acr
+  terraform["Terraform"] --> azure
+  terraform --> state["Azure Storage: remote state"]
+```
+
+The application resources are created in the existing resource group `ekfc-fs-dev-rg`. Terraform creates the registry, Log Analytics workspace, Container Apps environment, managed identity, role assignment, and Container App.
+
+Terraform state is stored separately in Azure Blob Storage. The state store is bootstrapped separately because Terraform needs a backend before it can store the main infrastructure state there.
+
+## API
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| `GET` | `/health` | Returns the API health status |
+| `GET` | `/api/info` | Returns the API name, version, and environment |
+| `GET` | `/api/tickets` | Lists tickets held in memory |
+| `POST` | `/api/tickets` | Creates a ticket held in memory |
+
+Example request:
+
+```json
+{
+  "title": "Printer is offline",
+  "description": "The warehouse printer is not responding.",
+  "priority": "high"
+}
+```
+
+A ticket requires a title and description. Priority can be `low`, `normal`, or `high`; it defaults to `normal`.
+
+## CI/CD
+
+The workflow is `.github/workflows/deploy.yml`.
+
+- Pull requests run the API tests and Terraform format and validation checks. They do not access Azure.
+- Pushes to `main` run the checks, create and apply a Terraform plan, build and push the API image to ACR, and update the Container App.
+- GitHub Actions authenticates to Azure using OIDC. No Azure client secret is stored in the repository.
+- After deployment, the workflow checks `/health` and publishes the API URLs in the Actions run summary.
+
+This is a nonproduction POC. A push to `main` automatically applies Terraform and deploys the API.
+
+## Run locally
+
+Requirements: Node.js 22 or later.
+
+Run the API:
+
+```bash
 npm start
-curl -i http://localhost:3000/health
+```
+
+In another terminal, check the endpoints:
+
+```bash
+curl http://localhost:3000/health
 curl http://localhost:3000/api/info
-Or run the container:
+curl http://localhost:3000/api/tickets
+```
+
+Run the automated tests:
+
+```bash
+npm test
+```
+
+Docker is optional for local development. To build and run the container, Docker must be installed:
+
+```bash
 docker build -t field-support-api:local .
 docker run --rm -p 3000:3000 field-support-api:local
-Azure and GitHub setup
-Use a dedicated Azure subscription or resource group for the POC. The workflow's Terraform identity needs Contributor and User Access Administrator on the deployment scope because Terraform creates resources and an ACR role assignment. It also needs Storage Blob Data Contributor on the Terraform state storage account. Scope these roles as narrowly as your setup allows.
-1. Create a public GitHub repository and push this project to its main branch.
-2. Sign in to Azure CLI, select the subscription, and initialize and validate the Terraform state configuration:
-   az login
-   az account set --subscription "YOUR_SUBSCRIPTION_ID"
-   terraform -chdir=infra/bootstrap-state init
-   terraform -chdir=infra/bootstrap-state validate
-   terraform -chdir=infra/bootstrap-state plan -var="subscription_id=YOUR_SUBSCRIPTION_ID"
-   Review the plan. When ready to create the state storage, run:
-   terraform -chdir=infra/bootstrap-state apply -var="subscription_id=YOUR_SUBSCRIPTION_ID"
-   terraform -chdir=infra/bootstrap-state output -raw state_storage_account_name
-   Replace YOUR_SUBSCRIPTION_ID with your Azure subscription ID when running these commands. Save the storage account name returned by Terraform. The backend uses Entra ID authentication; no storage key is needed.
-3. Create an Entra ID app registration or user-assigned identity for GitHub Actions, create a service principal if using an app registration, then add one federated credential for:
-   - repo:<OWNER>/<REPO>:ref:refs/heads/main (deployments)
-   - issuer: https://token.actions.githubusercontent.com
-   - audience: api://AzureADTokenExchange
-   No pull request federated credential is needed; PR checks do not authenticate to Azure.
-4. Assign the Azure and Storage roles described above. The workflow identity needs resource-group-level rights for deployments; the initial setup may require a broader scope to create the resource group and role assignment. If you keep it restricted to a pre-created deployment resource group, adjust infra/main.tf to use that group.
-5. In the GitHub repository, add these Actions variables (Settings -> Secrets and variables -> Actions -> Variables):
-   Variable	Value
-   AZURE_CLIENT_ID	Entra app or managed identity client ID
-   AZURE_TENANT_ID	Entra tenant ID
-   AZURE_SUBSCRIPTION_ID	Azure subscription ID
-   AZURE_LOCATION	Azure region, default uaenorth
-   RESOURCE_PREFIX	3-12 lowercase letters/digits/hyphens, default ekfc-fs
-   TFSTATE_RESOURCE_GROUP	State storage resource group, default ekfc-poc-tfstate-rg
-   TFSTATE_STORAGE_ACCOUNT	Name returned by the Terraform output
-6. Push to main. The workflow validates and applies Terraform, builds the API image in ACR, deploys it, and prints the public URL in the Actions run summary. Pull requests run Terraform formatting and validation without Azure credentials. Merges to main run the authenticated plan and apply, then build and deploy the API. This keeps deployment permissions out of untrusted pull request workflows.
-No GitHub secrets are required for Azure login. Keep main protected and require review before merging if this repository will be public.
-Deployment evidence and URL
-After the first successful POC CI/CD run, copy the public API URL from the run summary and verify /health and /api/info. Add the URL and screenshots of the successful workflow run here before submission:
-- Deployed URL: <add after deployment>
-- Pipeline screenshot: <add successful run screenshot>
-The brief allows deleting Azure resources after capturing evidence. Run terraform -chdir=infra destroy from a trusted machine with the same backend configuration, or delete the deployment resource group in Azure. Keep or delete the separate state storage resource group based on whether you need to retain Terraform state.
-Cost and cleanup
-This is a short-lived demo. Azure Container Apps can scale to zero, but Log Analytics ingestion/retention and the storage account can incur charges. The Terraform uses Standard ACR to match the current free-account offer for eligible new customers; confirm the free allowance in your subscription before deploying. Check current pricing for your region and delete resources after capturing the required evidence. The separately bootstrapped state store is not managed by the main Terraform configuration.
-Notes for the walkthrough
-- Terraform manages resource creation; the Actions workflow orders infrastructure before application deployment.
-- The initial Container App uses a public Microsoft placeholder image so Terraform can create the app before the first app image exists. The pipeline replaces it with the image built from this repository.
-- Each deployed image is tagged with the commit SHA, making the deployed version traceable to source.
-- State storage is bootstrapped once because Terraform cannot configure its own remote backend before that backend exists.
+```
+
+## Azure and GitHub configuration
+
+The workflow reads these repository Actions variables:
+
+| Variable | Purpose |
+|---|---|
+| `AZURE_CLIENT_ID` | Client ID of the GitHub deployment identity |
+| `AZURE_TENANT_ID` | Microsoft Entra tenant ID |
+| `AZURE_SUBSCRIPTION_ID` | Azure subscription ID |
+| `AZURE_LOCATION` | Azure region; defaults to `uaenorth` |
+| `RESOURCE_PREFIX` | Resource naming prefix; defaults to `ekfc-fs` |
+| `TFSTATE_RESOURCE_GROUP` | Resource group containing the Terraform state account |
+| `TFSTATE_STORAGE_ACCOUNT` | Storage account containing the Terraform state |
+
+The deployment identity needs access to the app resource group, the state storage account, and the role assignment Terraform creates for Container Apps to pull from ACR. Keep permissions scoped as narrowly as the setup allows.
+
+The Terraform state store is created separately under `infra/bootstrap-state`. Do not run its `apply` again unless you are intentionally creating or updating the state store.
+
+## Deployed API
+
+Base URL:
+
+[https://ekfc-fs-1klw0-api.blueground-f89c31e6.uaenorth.azurecontainerapps.io](https://ekfc-fs-1klw0-api.blueground-f89c31e6.uaenorth.azurecontainerapps.io)
+
+- [Health](https://ekfc-fs-1klw0-api.blueground-f89c31e6.uaenorth.azurecontainerapps.io/health)
+- [API info](https://ekfc-fs-1klw0-api.blueground-f89c31e6.uaenorth.azurecontainerapps.io/api/info)
+- [Tickets](https://ekfc-fs-1klw0-api.blueground-f89c31e6.uaenorth.azurecontainerapps.io/api/tickets)
+
+The ticket endpoint is a demo only. It has no database, so tickets do not persist across app restarts or deployments.
+
+## Evidence
+
+Before submitting the POC, add screenshots of the successful GitHub Actions run and the API responses under `docs/screenshots/`, then link them here.
+
+## Cost and cleanup
+
+Container Apps can scale to zero, but the registry, Log Analytics workspace, and Terraform state storage may still incur charges. Check Azure Cost Management while the POC is running.
+
+When finished, destroy the app infrastructure using Terraform with the existing remote backend. The separate state resource group and storage account are not removed by the main Terraform configuration. Keep them if you need the Terraform state; remove them only when you no longer need the state store.
