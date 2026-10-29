@@ -14,6 +14,7 @@ LABEL org.opencontainers.image.title="EKFC Field Support API" \
 
 WORKDIR /app
 COPY app/server.js ./app/server.js
+COPY app/ticket-store.js ./app/ticket-store.js
 
 # The runtime runs Node directly; npm and npx are not needed in the production image.
 RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx

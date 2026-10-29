@@ -2,6 +2,10 @@
 
 const http = require('node:http');
 const { randomUUID } = require('node:crypto');
+const {
+  AzureTableTicketStore,
+  createMemoryTicketStore
+} = require('./ticket-store');
 
 const appName = process.env.APP_NAME || 'ekfc-field-support-api';
 const version = process.env.APP_VERSION || '1.0.0';
@@ -9,6 +13,17 @@ const commit = process.env.APP_COMMIT || 'unknown';
 const environment = process.env.APP_ENV || 'dev';
 const port = Number(process.env.PORT || 3000);
 const maxRequestBytes = 16 * 1024;
+
+function createConfiguredTicketStore() {
+  if (process.env.TICKETS_TABLE_ENDPOINT) {
+    return new AzureTableTicketStore({
+      endpoint: process.env.TICKETS_TABLE_ENDPOINT,
+      tableName: process.env.TICKETS_TABLE_NAME || 'tickets'
+    });
+  }
+
+  return createMemoryTicketStore();
+}
 
 function sendJson(res, statusCode, payload) {
   res.writeHead(statusCode, {
@@ -42,9 +57,7 @@ async function readJson(req) {
   }
 }
 
-function createServer() {
-  const tickets = [];
-
+function createServer({ ticketStore = createMemoryTicketStore() } = {}) {
   return http.createServer(async (req, res) => {
     const pathname = new URL(req.url, 'http://localhost').pathname;
 
@@ -64,7 +77,12 @@ function createServer() {
     }
 
     if (req.method === 'GET' && pathname === '/api/tickets') {
-      sendJson(res, 200, { tickets });
+      try {
+        sendJson(res, 200, { tickets: await ticketStore.list() });
+      } catch (error) {
+        console.error('ticket_store_read_failed', error.message);
+        sendJson(res, 503, { error: 'ticket_store_unavailable' });
+      }
       return;
     }
 
@@ -74,9 +92,7 @@ function createServer() {
       try {
         payload = await readJson(req);
       } catch (error) {
-        sendJson(res, error.statusCode || 400, {
-          error: error.message
-        });
+        sendJson(res, error.statusCode || 400, { error: error.message });
         return;
       }
 
@@ -127,7 +143,14 @@ function createServer() {
         createdAt: new Date().toISOString()
       };
 
-      tickets.push(ticket);
+      try {
+        await ticketStore.create(ticket);
+      } catch (error) {
+        console.error('ticket_store_write_failed', error.message);
+        sendJson(res, 503, { error: 'ticket_store_unavailable' });
+        return;
+      }
+
       sendJson(res, 201, ticket);
       return;
     }
@@ -137,7 +160,7 @@ function createServer() {
 }
 
 if (require.main === module) {
-  const server = createServer();
+  const server = createServer({ ticketStore: createConfiguredTicketStore() });
 
   server.listen(port, '0.0.0.0', () => {
     console.log(
@@ -146,4 +169,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { createServer };
+module.exports = { createConfiguredTicketStore, createServer };
