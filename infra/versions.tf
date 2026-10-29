@@ -16,6 +16,12 @@ terraform {
 }
 
 provider "azurerm" {
-  features {}
+  features {
+    storage {
+      # The tickets account disables Shared Key; skip AzureRM's key-based readiness probe.
+      data_plane_available = false
+    }
+  }
+
   resource_provider_registrations = "none"
 }
