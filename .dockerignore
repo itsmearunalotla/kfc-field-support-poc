@@ -1,4 +1,7 @@
 .git
 .github
 infra
+docs
 README.md
+package.json
+app/server.test.js
