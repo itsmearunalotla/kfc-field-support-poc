@@ -81,7 +81,14 @@ Save the storage account name returned by the last command. Create or use a GitH
 - Issuer: `https://token.actions.githubusercontent.com`
 - Audience: `api://AzureADTokenExchange`
 
-Grant that identity permission to manage the application resource group and create the ACR pull role assignment. It also needs `Storage Blob Data Contributor` on the state storage account. Scope role assignments as narrowly as your setup allows.
+Assign the GitHub Actions identity these roles:
+
+- `Contributor` on `ekfc-fs-dev-rg` to manage application resources.
+- `User Access Administrator` on `ekfc-fs-dev-rg` so Terraform can create the `AcrPull` role assignment for the Container App identity.
+- `AcrPush` on the Azure Container Registry to push the API image.
+- `Storage Blob Data Contributor` on the state storage account to access Terraform state.
+
+Keep each assignment scoped to the resource group or resource listed above.
 
 Add these repository Actions variables under **Settings → Secrets and variables → Actions → Variables**:
 
