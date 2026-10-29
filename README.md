@@ -14,7 +14,9 @@ flowchart TD
   terraform["Terraform"] --> app
   terraform --> acr
   terraform --> state["Azure Blob: Terraform state"]
-  app -->|"Managed identity: AcrPull"| acr
+  app -->|"Managed identity: AcrPull"| acr["Azure Container Registry"]
+  app -->|"Managed identity: table access"| tickets["Azure Table Storage"]
+  terraform --> tickets
 ```
 
 Terraform manages the application resource group `ekfc-fs-dev-rg`, Azure Container Registry, Log Analytics workspace, Container Apps environment, separate managed identities for ACR pull and ticket data, the ticket storage account and role assignment, and Container App.
@@ -47,7 +49,7 @@ A title and description are required. Priority is optional and can be `low`, `no
 The workflows are:
 
 - `.github/workflows/build.yml` runs API tests, Terraform formatting and validation for both Terraform roots, Checkov, and Trivy configuration scanning. Pull requests run checks without Azure credentials.
-- `.github/workflows/deploy-dev.yml` calls the checks, creates a Terraform plan, waits for approval in the `dev-apply` GitHub Environment, checks that the plan has not changed, then applies it. It builds and scans the API image, pushes it to ACR, deploys it, and checks the live API response.
+- `.github/workflows/deploy-dev.yml` calls the checks, creates a Terraform plan, waits for approval in the `dev-apply` GitHub Environment, checks that the plan has not changed, then applies it. It builds and scans the API image, pushes it to ACR, deploys it, and checks the live API revision and ticket storage.
 - Images are tagged with the Git commit SHA. `/api/info` returns that commit, and the deployment workflow verifies it.
 - GitHub Actions authenticates to Azure using OIDC. No Azure client secret is stored in the repository.
 
