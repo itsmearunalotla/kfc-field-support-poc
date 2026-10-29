@@ -17,7 +17,7 @@ flowchart TD
   app -->|"Managed identity: AcrPull"| acr
 ```
 
-The application resources are deployed into the existing resource group `ekfc-fs-dev-rg`. Terraform manages the Azure Container Registry, Log Analytics workspace, Container Apps environment, managed identity, ACR pull role assignment, and Container App.
+Terraform manages the application resource group `ekfc-fs-dev-rg` and its Azure Container Registry, Log Analytics workspace, Container Apps environment, managed identity, ACR pull role assignment, and Container App.
 
 Terraform state is stored separately in Azure Blob Storage. The state store is bootstrapped separately because the remote backend must exist before Terraform can use it.
 
@@ -44,10 +44,10 @@ A title and description are required. Priority is optional and can be `low`, `no
 
 ## CI/CD
 
-The workflow is `.github/workflows/deploy.yml`.
+The workflows are:
 
-- Pull requests run the API tests and Terraform format and validation checks. They do not access Azure.
-- Pushes to `main` run those checks, create and apply a Terraform plan using `infra/dev.tfvars`, build and push the API image to ACR, and update the Container App.
+- `.github/workflows/build.yml` runs API tests, Terraform formatting and validation, and a Trivy configuration scan for pull requests. It is also called by the deployment workflow.
+- `.github/workflows/deploy-dev.yml` runs on pushes to `main` and manual dispatch. It calls the checks, applies the Terraform plan using `infra/dev.tfvars`, builds and scans the API image, pushes it to ACR, and updates the Container App.
 - GitHub Actions authenticates to Azure using OIDC. No Azure client secret is stored in the repository.
 - After deployment, the workflow checks `/health` and publishes the API URLs in the Actions run summary.
 
@@ -98,7 +98,7 @@ The workflow reads these repository Actions variables:
 
 Dev deployment settings—including the location, environment, resource group, and naming prefix—are in `infra/dev.tfvars`. That file contains no secrets.
 
-The deployment identity needs access to the app resource group, the state storage account, and the role assignment Terraform creates so Container Apps can pull from ACR. Keep permissions scoped as narrowly as the setup allows.
+The deployment identity needs access to the app resource group, the state storage account, and permission to create the ACR pull role assignment. Keep permissions scoped as narrowly as the setup allows.
 
 The Terraform state store is managed separately under `infra/bootstrap-state`. Do not apply that configuration again unless you intend to create or update the state store.
 
