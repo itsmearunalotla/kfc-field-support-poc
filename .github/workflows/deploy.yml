@@ -98,7 +98,7 @@ jobs:
             -backend-config="subscription_id=${{ vars.AZURE_SUBSCRIPTION_ID }}"
 
       - name: Create Terraform plan
-        run: terraform -chdir=infra plan -input=false -out=tfplan
+        run: terraform -chdir=infra plan -input=false -var-file=dev.tfvars -out=tfplan
 
       - name: Apply Terraform plan
         run: terraform -chdir=infra apply -input=false -auto-approve tfplan
