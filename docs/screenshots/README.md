@@ -32,9 +32,15 @@ The state resource group contains the managed identity and storage account.
 
 ![Terraform state resource group](azure-state-resource-group.png)
 
+## GitHub Actions identity
+
+This screenshot shows the User Access Administrator assignment for the GitHub Actions identity at the application resource group scope.
+
+![User Access Administrator assignment](azure-github-identity-user-access-admin.png)
+
 ## Deployment and API evidence still needed
 
-After the updated main-branch deployment succeeds, add:
+Add these genuine screenshots after the latest main-branch deployment succeeds:
 
 - `actions-success.png` — successful GitHub Actions deployment and run summary.
 - `api-health.png` — live `/health` response.
