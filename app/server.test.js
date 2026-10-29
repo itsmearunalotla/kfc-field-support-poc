@@ -1,12 +1,15 @@
 const { test, beforeEach, afterEach } = require("node:test");
 const assert = require("node:assert/strict");
+const { createMemoryTicketStore } = require("./ticket-store");
 const { createServer } = require("./server");
 
 let server;
 let baseUrl;
+let ticketStore;
 
 beforeEach(async () => {
-  server = createServer();
+  ticketStore = createMemoryTicketStore();
+  server = createServer({ ticketStore });
 
   await new Promise((resolve) => {
     server.listen(0, "127.0.0.1", () => {
@@ -102,4 +105,17 @@ test("rejects a null ticket body", async () => {
   });
 
   assert.equal(response.status, 400);
+});
+
+test("returns 503 when ticket storage is unavailable", async () => {
+  ticketStore.list = async () => {
+    throw new Error("storage_unavailable");
+  };
+
+  const response = await fetch(`${baseUrl}/api/tickets`);
+
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), {
+    error: "ticket_store_unavailable",
+  });
 });
