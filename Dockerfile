@@ -13,8 +13,7 @@ LABEL org.opencontainers.image.title="EKFC Field Support API" \
       org.opencontainers.image.revision="${APP_COMMIT}"
 
 WORKDIR /app
-COPY package.json ./
-COPY app ./app
+COPY app/server.js ./app/server.js
 
 # The runtime runs Node directly; npm and npx are not needed in the production image.
 RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
