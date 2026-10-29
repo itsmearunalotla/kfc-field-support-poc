@@ -29,13 +29,14 @@ test("health endpoint returns OK", async () => {
   assert.deepEqual(await response.json(), { status: "ok" });
 });
 
-test("info endpoint returns the app details", async () => {
+test("info endpoint returns the app details and commit", async () => {
   const response = await fetch(`${baseUrl}/api/info`);
 
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), {
     name: "ekfc-field-support-api",
     version: "1.0.0",
+    commit: "unknown",
     environment: "dev",
   });
 });
