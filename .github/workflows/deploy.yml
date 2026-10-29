@@ -17,22 +17,30 @@ concurrency:
 
 jobs:
   checks:
-    name: Terraform format and validate
+    name: API tests and Terraform validation
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Run API tests
+        run: npm test
 
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.9.8
 
-      - name: Terraform format check
+      - name: Check Terraform formatting
         run: terraform -chdir=infra fmt -check -recursive
 
-      - name: Initialize providers without state
+      - name: Initialize Terraform providers
         run: terraform -chdir=infra init -backend=false -input=false
 
-      - name: Validate
+      - name: Validate Terraform
         run: terraform -chdir=infra validate
 
   infra:
@@ -64,14 +72,14 @@ jobs:
         with:
           terraform_version: 1.9.8
 
-      - name: Azure login with GitHub OIDC
+      - name: Sign in to Azure with GitHub OIDC
         uses: azure/login@v2
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Initialize remote state
+      - name: Initialize remote Terraform state
         run: |
           terraform -chdir=infra init -input=false \
             -backend-config="resource_group_name=${{ vars.TFSTATE_RESOURCE_GROUP || 'ekfc-poc-tfstate-rg' }}" \
@@ -84,13 +92,13 @@ jobs:
             -backend-config="tenant_id=${{ vars.AZURE_TENANT_ID }}" \
             -backend-config="subscription_id=${{ vars.AZURE_SUBSCRIPTION_ID }}"
 
-      - name: Plan
+      - name: Create Terraform plan
         run: terraform -chdir=infra plan -input=false -out=tfplan
 
-      - name: Apply
+      - name: Apply Terraform plan
         run: terraform -chdir=infra apply -input=false -auto-approve tfplan
 
-      - name: Export deployment names
+      - name: Export deployment details
         id: outputs
         run: |
           echo "registry_name=$(terraform -chdir=infra output -raw registry_name)" >> "$GITHUB_OUTPUT"
@@ -99,7 +107,7 @@ jobs:
           echo "resource_group_name=$(terraform -chdir=infra output -raw resource_group_name)" >> "$GITHUB_OUTPUT"
 
   app:
-    name: Build, push, deploy API
+    name: Build, push, and deploy API
     needs: infra
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
@@ -109,7 +117,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Azure login with GitHub OIDC
+      - name: Sign in to Azure with GitHub OIDC
         uses: azure/login@v2
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
@@ -129,7 +137,7 @@ jobs:
       - name: Install Container Apps CLI extension
         run: az extension add --name containerapp --upgrade
 
-      - name: Deploy image
+      - name: Deploy API image
         env:
           REGISTRY_LOGIN_SERVER: ${{ needs.infra.outputs.registry_login_server }}
           RESOURCE_GROUP: ${{ needs.infra.outputs.resource_group }}
@@ -141,7 +149,7 @@ jobs:
             --resource-group "$RESOURCE_GROUP" \
             --image "$REGISTRY_LOGIN_SERVER/field-support-api:$IMAGE_TAG"
 
-      - name: Publish deployed URL
+      - name: Check API health and publish URLs
         env:
           RESOURCE_GROUP: ${{ needs.infra.outputs.resource_group }}
           CONTAINER_APP: ${{ needs.infra.outputs.app_name }}
@@ -151,6 +159,21 @@ jobs:
             --resource-group "$RESOURCE_GROUP" \
             --query properties.configuration.ingress.fqdn \
             --output tsv)
+
+          for attempt in {1..12}; do
+            if curl --fail --silent --show-error "https://$URL/health"; then
+              break
+            fi
+
+            if [ "$attempt" -eq 12 ]; then
+              echo "API health check failed after 12 attempts."
+              exit 1
+            fi
+
+            sleep 10
+          done
+
           echo "Deployed API: https://$URL" >> "$GITHUB_STEP_SUMMARY"
           echo "Health: https://$URL/health" >> "$GITHUB_STEP_SUMMARY"
           echo "Info: https://$URL/api/info" >> "$GITHUB_STEP_SUMMARY"
+          echo "Tickets: https://$URL/api/tickets" >> "$GITHUB_STEP_SUMMARY"

@@ -4,7 +4,8 @@
   "private": true,
   "description": "Interview POC: a small API deployed to Azure Container Apps",
   "scripts": {
-    "start": "node app/server.js"
+    "start": "node app/server.js",
+    "test": "node --test"
   },
   "engines": {
     "node": ">=20"
