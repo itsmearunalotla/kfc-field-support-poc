@@ -1,16 +1,15 @@
-name: POC CI/CD
+name: CI/CD
 
 on:
   push:
     branches: [main]
-    paths-ignore: ['README.md']
+    paths-ignore: ["README.md"]
   pull_request:
     branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
-  id-token: write
 
 concurrency:
   group: field-support-${{ github.ref }}
@@ -22,13 +21,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.9.8
+
       - name: Terraform format check
         run: terraform -chdir=infra fmt -check -recursive
+
       - name: Initialize providers without state
         run: terraform -chdir=infra init -backend=false -input=false
+
       - name: Validate
         run: terraform -chdir=infra validate
 
@@ -37,30 +40,37 @@ jobs:
     needs: checks
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     outputs:
       registry_name: ${{ steps.outputs.outputs.registry_name }}
-      app_name: ${{ steps.outputs.outputs.app_name }}
-      resource_group: ${{ steps.outputs.outputs.resource_group }}
+      registry_login_server: ${{ steps.outputs.outputs.registry_login_server }}
+      app_name: ${{ steps.outputs.outputs.container_app_name }}
+      resource_group: ${{ steps.outputs.outputs.resource_group_name }}
     env:
-      ARM_USE_OIDC: true
+      ARM_USE_OIDC: "true"
       ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
       ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
       ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
       TF_VAR_location: ${{ vars.AZURE_LOCATION || 'uaenorth' }}
       TF_VAR_environment: dev
       TF_VAR_name_prefix: ${{ vars.RESOURCE_PREFIX || 'ekfc-fs' }}
-      TF_IN_AUTOMATION: true
+      TF_IN_AUTOMATION: "true"
     steps:
       - uses: actions/checkout@v4
+
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.9.8
+
       - name: Azure login with GitHub OIDC
         uses: azure/login@v2
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
       - name: Initialize remote state
         run: |
           terraform -chdir=infra init -input=false \
@@ -73,54 +83,74 @@ jobs:
             -backend-config="client_id=${{ vars.AZURE_CLIENT_ID }}" \
             -backend-config="tenant_id=${{ vars.AZURE_TENANT_ID }}" \
             -backend-config="subscription_id=${{ vars.AZURE_SUBSCRIPTION_ID }}"
+
       - name: Plan
         run: terraform -chdir=infra plan -input=false -out=tfplan
+
       - name: Apply
         run: terraform -chdir=infra apply -input=false -auto-approve tfplan
+
       - name: Export deployment names
         id: outputs
         run: |
           echo "registry_name=$(terraform -chdir=infra output -raw registry_name)" >> "$GITHUB_OUTPUT"
-          echo "app_name=$(terraform -chdir=infra output -raw container_app_name)" >> "$GITHUB_OUTPUT"
-          echo "resource_group=$(terraform -chdir=infra output -raw resource_group_name)" >> "$GITHUB_OUTPUT"
+          echo "registry_login_server=$(terraform -chdir=infra output -raw registry_login_server)" >> "$GITHUB_OUTPUT"
+          echo "container_app_name=$(terraform -chdir=infra output -raw container_app_name)" >> "$GITHUB_OUTPUT"
+          echo "resource_group_name=$(terraform -chdir=infra output -raw resource_group_name)" >> "$GITHUB_OUTPUT"
 
   app:
     name: Build, push, deploy API
     needs: infra
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v4
+
       - name: Azure login with GitHub OIDC
         uses: azure/login@v2
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
       - name: Build and push image to ACR
         env:
           REGISTRY_NAME: ${{ needs.infra.outputs.registry_name }}
+          REGISTRY_LOGIN_SERVER: ${{ needs.infra.outputs.registry_login_server }}
+          IMAGE_TAG: ${{ github.sha }}
         run: |
-          az acr build \
-            --registry "$REGISTRY_NAME" \
-            --image field-support-api:${GITHUB_SHA} \
-            .
+          az acr login --name "$REGISTRY_NAME"
+          docker build --tag "$REGISTRY_LOGIN_SERVER/field-support-api:$IMAGE_TAG" .
+          docker push "$REGISTRY_LOGIN_SERVER/field-support-api:$IMAGE_TAG"
+
+      - name: Install Container Apps CLI extension
+        run: az extension add --name containerapp --upgrade
+
       - name: Deploy image
         env:
-          REGISTRY_NAME: ${{ needs.infra.outputs.registry_name }}
+          REGISTRY_LOGIN_SERVER: ${{ needs.infra.outputs.registry_login_server }}
           RESOURCE_GROUP: ${{ needs.infra.outputs.resource_group }}
           CONTAINER_APP: ${{ needs.infra.outputs.app_name }}
+          IMAGE_TAG: ${{ github.sha }}
         run: |
           az containerapp update \
             --name "$CONTAINER_APP" \
             --resource-group "$RESOURCE_GROUP" \
-            --image "$REGISTRY_NAME.azurecr.io/field-support-api:${GITHUB_SHA}"
+            --image "$REGISTRY_LOGIN_SERVER/field-support-api:$IMAGE_TAG"
+
       - name: Publish deployed URL
         env:
           RESOURCE_GROUP: ${{ needs.infra.outputs.resource_group }}
           CONTAINER_APP: ${{ needs.infra.outputs.app_name }}
         run: |
-          URL=$(az containerapp show --name "$CONTAINER_APP" --resource-group "$RESOURCE_GROUP" --query properties.configuration.ingress.fqdn --output tsv)
+          URL=$(az containerapp show \
+            --name "$CONTAINER_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query properties.configuration.ingress.fqdn \
+            --output tsv)
           echo "Deployed API: https://$URL" >> "$GITHUB_STEP_SUMMARY"
           echo "Health: https://$URL/health" >> "$GITHUB_STEP_SUMMARY"
           echo "Info: https://$URL/api/info" >> "$GITHUB_STEP_SUMMARY"
