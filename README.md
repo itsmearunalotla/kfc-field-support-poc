@@ -47,13 +47,22 @@ A title and description are required. Priority is optional and can be `low`, `no
 The workflows are:
 
 - `.github/workflows/build.yml` runs API tests, Terraform formatting and validation for both Terraform roots, Checkov, and Trivy configuration scanning. Pull requests run checks without Azure credentials.
-- `.github/workflows/deploy-dev.yml` calls the checks, plans and applies Terraform from `infra/dev.tfvars`, builds and scans the API image, pushes it to ACR, deploys it, and checks the live API response.
+- `.github/workflows/deploy-dev.yml` calls the checks, creates a Terraform plan, waits for approval in the `dev-apply` GitHub Environment, checks that the plan has not changed, then applies it. It builds and scans the API image, pushes it to ACR, deploys it, and checks the live API response.
 - Images are tagged with the Git commit SHA. `/api/info` returns that commit, and the deployment workflow verifies it.
 - GitHub Actions authenticates to Azure using OIDC. No Azure client secret is stored in the repository.
 
-Trivy uses `exit-code: "0"` and Checkov uses `soft_fail: true`: both report findings but do not currently block the workflow. This is a known POC limitation, not a production security gate.
+The Terraform plan is published in the Actions run summary before the apply job. The apply job recalculates the plan after approval and compares its resource changes with the reviewed plan. If they differ, apply stops and the new plan must be reviewed.
 
-A push to `main` automatically applies Terraform and deploys the API. This POC has a dev environment only. Production deployment, approval gates, and production-specific controls are out of scope.
+### Security scan policy
+
+Checkov and Trivy fail the workflow on new findings. Existing POC exceptions remain visible in scan output and are limited to:
+
+- Checkov controls for public endpoints needed by GitHub-hosted runners, low-cost LRS replication, unused services, and Premium-only ACR features. See the explicit IDs in `.github/workflows/build.yml`.
+- Trivy `AZU-0012` for the state storage account's public endpoint. State access uses Entra ID/OIDC and a private Blob container; the exception is scoped to `infra/bootstrap-state/main.tf` in `.trivyignore.yaml`. Use a private runner/VNet to remove it.
+
+The image scan blocks on HIGH and CRITICAL vulnerabilities. Review and update the exception list when the POC architecture changes.
+
+This POC has a dev environment only. Pushes to `main` automatically start the workflow; the `dev-apply` environment approval must be configured before Terraform can apply.
 
 ## One-time Azure and GitHub setup
 
@@ -100,6 +109,8 @@ Add these repository Actions variables under **Settings → Secrets and variable
 | `TFSTATE_RESOURCE_GROUP` | Resource group containing the state account |
 | `TFSTATE_STORAGE_ACCOUNT` | Name returned by the bootstrap Terraform output |
 
+Create a GitHub Environment named `dev-apply` under **Settings → Environments**. Add yourself (or a trusted reviewer) under **Required reviewers**, save the protection rule, and restrict deployment branches to `main`. The approval gate will not pause deployments until a required reviewer is configured.
+
 Dev application settings are in `infra/dev.tfvars`; it contains no credentials. The deployment workflow handles remote state initialization.
 
 The state store lives under `infra/bootstrap-state`. Do not apply that configuration again unless you intend to manage the state store itself.
@@ -141,7 +152,7 @@ docker run --rm -p 3000:3000 field-support-api:local
 - The Container App uses a user-assigned managed identity to pull images from ACR; the ACR admin account stays disabled.
 - The app uses Consumption workload profiles, scales from zero to two replicas, and has an HTTP request scaling rule. Scale-to-zero reduces idle compute use but may make the first request after inactivity slower.
 - Tickets are held in process memory to keep the example small. They are not persistent and may be lost on restart or scale-in.
-- This demonstrates a dev deployment only. There is no production environment or approval workflow.
+- This demonstrates a dev deployment only. Terraform apply requires approval through the `dev-apply` GitHub Environment.
 
 ## Deployed API
 
