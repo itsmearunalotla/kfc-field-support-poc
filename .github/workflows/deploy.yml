@@ -51,6 +51,14 @@ jobs:
       - name: Validate Terraform
         run: terraform -chdir=infra validate
 
+      - name: Scan configuration with Trivy
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: config
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          exit-code: "0"
+
   infra:
     name: Terraform plan and apply
     needs: checks
@@ -112,7 +120,7 @@ jobs:
           echo "resource_group_name=$(terraform -chdir=infra output -raw resource_group_name)" >> "$GITHUB_OUTPUT"
 
   app:
-    name: Build, push, and deploy API
+    name: Build, scan, push, and deploy API
     needs: infra
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
@@ -129,7 +137,7 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Build and push image to ACR
+      - name: Build API image
         env:
           REGISTRY_NAME: ${{ needs.infra.outputs.registry_name }}
           REGISTRY_LOGIN_SERVER: ${{ needs.infra.outputs.registry_login_server }}
@@ -137,7 +145,21 @@ jobs:
         run: |
           az acr login --name "$REGISTRY_NAME"
           docker build --tag "$REGISTRY_LOGIN_SERVER/field-support-api:$IMAGE_TAG" .
-          docker push "$REGISTRY_LOGIN_SERVER/field-support-api:$IMAGE_TAG"
+
+      - name: Scan API image with Trivy
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: image
+          image-ref: "${{ needs.infra.outputs.registry_login_server }}/field-support-api:${{ github.sha }}"
+          format: table
+          severity: HIGH,CRITICAL
+          exit-code: "0"
+
+      - name: Push API image to ACR
+        env:
+          REGISTRY_LOGIN_SERVER: ${{ needs.infra.outputs.registry_login_server }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: docker push "$REGISTRY_LOGIN_SERVER/field-support-api:$IMAGE_TAG"
 
       - name: Install Container Apps CLI extension
         run: az extension add --name containerapp --upgrade

@@ -22,6 +22,24 @@ afterEach(async () => {
   });
 });
 
+test("health endpoint returns OK", async () => {
+  const response = await fetch(`${baseUrl}/health`);
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { status: "ok" });
+});
+
+test("info endpoint returns the app details", async () => {
+  const response = await fetch(`${baseUrl}/api/info`);
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    name: "ekfc-field-support-api",
+    version: "1.0.0",
+    environment: "dev",
+  });
+});
+
 test("creates and returns a support ticket", async () => {
   const response = await fetch(`${baseUrl}/api/tickets`, {
     method: "POST",
