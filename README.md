@@ -155,13 +155,13 @@ Base URL:
 
 ## Submission evidence
 
-Add genuine screenshots under `docs/screenshots/` before submitting:
+Deployment and API evidence is available in [docs/screenshots](docs/screenshots/README.md):
 
-- Successful main-branch deployment and Actions run summary
-- Live `/health` response
-- Live `/api/info` response showing the deployed commit
+- [Successful main-branch deployment](docs/screenshots/actions-success.png)
+- [Live /health response](docs/screenshots/api-health.png)
+- [Live /api/info response](docs/screenshots/api-info.png)
 
-The evidence folder includes a short checklist. Do not include credentials or access tokens in screenshots.
+The folder also contains screenshots of the Azure resources and Terraform state. Do not share screenshots that expose credentials or access tokens.
 
 ## Cost and cleanup
 
