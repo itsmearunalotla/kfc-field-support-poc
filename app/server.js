@@ -78,6 +78,11 @@ function createServer() {
         return;
       }
 
+      if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+        sendJson(res, 400, { error: 'invalid_ticket' });
+        return;
+      }
+
       const title =
         typeof payload.title === 'string' ? payload.title.trim() : '';
       const description =

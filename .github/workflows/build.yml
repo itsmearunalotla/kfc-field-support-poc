@@ -1,0 +1,53 @@
+name: Build and Checks
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: API tests and Terraform checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Run API tests
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee "$RUNNER_TEMP/api-test-output.txt"
+          {
+            echo "### API test results"
+            echo '```text'
+            cat "$RUNNER_TEMP/api-test-output.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.9.8
+
+      - name: Check Terraform formatting
+        run: terraform -chdir=infra fmt -check -recursive
+
+      - name: Initialize Terraform providers
+        run: terraform -chdir=infra init -backend=false -input=false
+
+      - name: Validate Terraform
+        run: terraform -chdir=infra validate
+
+      - name: Scan configuration with Trivy
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: config
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          exit-code: "0"

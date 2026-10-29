@@ -94,3 +94,12 @@ test("lists tickets after one is created", async () => {
   assert.equal(tickets.length, 1);
   assert.equal(tickets[0].title, "Printer is offline");
 });
+test('rejects a null ticket body', async () => {
+  const response = await fetch(`${baseUrl}/api/tickets`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: 'null',
+  });
+
+  assert.equal(response.status, 400);
+});
