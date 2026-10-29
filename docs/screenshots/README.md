@@ -45,5 +45,6 @@ These screenshots document the successful main-branch deployment and live API re
 - [GitHub Actions deployment](actions-success.png) — successful workflow run and job summary.
 - [API health](api-health.png) — live `/health` response.
 - [API information](api-info.png) — live `/api/info` response, including the deployed commit.
+- [Ticket creation and retrieval](api-ticket-create-and-retrieve.png) — a ticket created with `POST /api/tickets` and returned by `GET /api/tickets`.
 
 The Azure screenshots above document the application resources, remote state, and GitHub Actions identity. Do not include credentials or access tokens in screenshots.
