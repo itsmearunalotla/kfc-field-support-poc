@@ -44,6 +44,19 @@ jobs:
       - name: Validate Terraform
         run: terraform -chdir=infra validate
 
+      - name: Initialize bootstrap Terraform
+        run: terraform -chdir=infra/bootstrap-state init -backend=false -input=false
+
+      - name: Validate bootstrap Terraform
+        run: terraform -chdir=infra/bootstrap-state validate
+
+      - name: Scan Terraform with Checkov
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: infra
+          framework: terraform
+          soft_fail: true
+
       - name: Scan configuration with Trivy
         uses: aquasecurity/trivy-action@v0.36.0
         with:
