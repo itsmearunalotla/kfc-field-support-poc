@@ -20,8 +20,8 @@ jobs:
     name: Run checks
     uses: ./.github/workflows/build.yml
 
-  infrastructure:
-    name: Provision Azure infrastructure
+  plan:
+    name: Plan Azure changes
     needs: checks
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
@@ -29,10 +29,7 @@ jobs:
       contents: read
       id-token: write
     outputs:
-      registry_name: ${{ steps.terraform_outputs.outputs.registry_name }}
-      registry_login_server: ${{ steps.terraform_outputs.outputs.registry_login_server }}
-      app_name: ${{ steps.terraform_outputs.outputs.container_app_name }}
-      resource_group: ${{ steps.terraform_outputs.outputs.resource_group_name }}
+      fingerprint: ${{ steps.plan.outputs.fingerprint }}
     env:
       ARM_USE_OIDC: "true"
       ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
@@ -53,7 +50,7 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Initialize Terraform
+      - name: Initialize remote state
         run: |
           terraform -chdir=infra init -input=false \
             -backend-config="resource_group_name=${{ vars.TFSTATE_RESOURCE_GROUP || 'ekfc-poc-tfstate-rg' }}" \
@@ -66,14 +63,87 @@ jobs:
             -backend-config="tenant_id=${{ vars.AZURE_TENANT_ID }}" \
             -backend-config="subscription_id=${{ vars.AZURE_SUBSCRIPTION_ID }}"
 
-      - name: Create Terraform plan
-        run: terraform -chdir=infra plan -input=false -var-file=dev.tfvars -out=tfplan
+      - name: Create and publish plan
+        id: plan
+        run: |
+          terraform -chdir=infra plan -input=false -var-file=dev.tfvars -out=tfplan
+          terraform -chdir=infra show -no-color tfplan | tee "$RUNNER_TEMP/plan.txt"
+          {
+            echo "## Terraform plan for dev"
+            echo '~~~text'
+            cat "$RUNNER_TEMP/plan.txt"
+            echo '~~~'
+          } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Apply Terraform plan
-        run: terraform -chdir=infra apply -input=false -auto-approve tfplan
+          fingerprint=$(terraform -chdir=infra show -json tfplan | jq -S \
+            '{resource_changes: [.resource_changes[]? | {address, change}], output_changes: .output_changes}' \
+            | sha256sum | cut -d ' ' -f 1)
+          echo "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
+
+  apply:
+    name: Approve and apply Terraform plan
+    needs: plan
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: dev-apply
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      registry_name: ${{ steps.outputs.outputs.registry_name }}
+      registry_login_server: ${{ steps.outputs.outputs.registry_login_server }}
+      app_name: ${{ steps.outputs.outputs.container_app_name }}
+      resource_group: ${{ steps.outputs.outputs.resource_group_name }}
+    env:
+      ARM_USE_OIDC: "true"
+      ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      TF_IN_AUTOMATION: "true"
+      EXPECTED_PLAN_FINGERPRINT: ${{ needs.plan.outputs.fingerprint }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.9.8
+
+      - name: Sign in to Azure
+        uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Initialize remote state
+        run: |
+          terraform -chdir=infra init -input=false \
+            -backend-config="resource_group_name=${{ vars.TFSTATE_RESOURCE_GROUP || 'ekfc-poc-tfstate-rg' }}" \
+            -backend-config="storage_account_name=${{ vars.TFSTATE_STORAGE_ACCOUNT }}" \
+            -backend-config="container_name=tfstate" \
+            -backend-config="key=field-support/dev.tfstate" \
+            -backend-config="use_oidc=true" \
+            -backend-config="use_azuread_auth=true" \
+            -backend-config="client_id=${{ vars.AZURE_CLIENT_ID }}" \
+            -backend-config="tenant_id=${{ vars.AZURE_TENANT_ID }}" \
+            -backend-config="subscription_id=${{ vars.AZURE_SUBSCRIPTION_ID }}"
+
+      - name: Recheck and apply reviewed plan
+        run: |
+          terraform -chdir=infra plan -input=false -var-file=dev.tfvars -out=tfplan
+          fingerprint=$(terraform -chdir=infra show -json tfplan | jq -S \
+            '{resource_changes: [.resource_changes[]? | {address, change}], output_changes: .output_changes}' \
+            | sha256sum | cut -d ' ' -f 1)
+
+          if [ "$fingerprint" != "$EXPECTED_PLAN_FINGERPRINT" ]; then
+            echo "Terraform plan changed after review. Review the new plan and run again."
+            exit 1
+          fi
+
+          terraform -chdir=infra apply -input=false -auto-approve tfplan
 
       - name: Export Terraform outputs
-        id: terraform_outputs
+        id: outputs
         run: |
           echo "registry_name=$(terraform -chdir=infra output -raw registry_name)" >> "$GITHUB_OUTPUT"
           echo "registry_login_server=$(terraform -chdir=infra output -raw registry_login_server)" >> "$GITHUB_OUTPUT"
@@ -82,7 +152,7 @@ jobs:
 
   deploy:
     name: Build and deploy API
-    needs: infrastructure
+    needs: apply
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
@@ -105,8 +175,8 @@ jobs:
 
       - name: Build API image
         env:
-          REGISTRY_NAME: ${{ needs.infrastructure.outputs.registry_name }}
-          REGISTRY_LOGIN_SERVER: ${{ needs.infrastructure.outputs.registry_login_server }}
+          REGISTRY_NAME: ${{ needs.apply.outputs.registry_name }}
+          REGISTRY_LOGIN_SERVER: ${{ needs.apply.outputs.registry_login_server }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
           az acr login --name "$REGISTRY_NAME"
@@ -120,14 +190,14 @@ jobs:
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: image
-          image-ref: "${{ needs.infrastructure.outputs.registry_login_server }}/field-support-api:${{ github.sha }}"
+          image-ref: "${{ needs.apply.outputs.registry_login_server }}/field-support-api:${{ github.sha }}"
           format: table
           severity: HIGH,CRITICAL
-          exit-code: "0"
+          exit-code: "1"
 
       - name: Push image to ACR
         env:
-          REGISTRY_LOGIN_SERVER: ${{ needs.infrastructure.outputs.registry_login_server }}
+          REGISTRY_LOGIN_SERVER: ${{ needs.apply.outputs.registry_login_server }}
           IMAGE_TAG: ${{ github.sha }}
         run: docker push "$REGISTRY_LOGIN_SERVER/field-support-api:$IMAGE_TAG"
 
@@ -136,9 +206,9 @@ jobs:
 
       - name: Deploy API image
         env:
-          REGISTRY_LOGIN_SERVER: ${{ needs.infrastructure.outputs.registry_login_server }}
-          RESOURCE_GROUP: ${{ needs.infrastructure.outputs.resource_group }}
-          CONTAINER_APP: ${{ needs.infrastructure.outputs.app_name }}
+          REGISTRY_LOGIN_SERVER: ${{ needs.apply.outputs.registry_login_server }}
+          RESOURCE_GROUP: ${{ needs.apply.outputs.resource_group }}
+          CONTAINER_APP: ${{ needs.apply.outputs.app_name }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
           az containerapp update \
@@ -146,10 +216,10 @@ jobs:
             --resource-group "$RESOURCE_GROUP" \
             --image "$REGISTRY_LOGIN_SERVER/field-support-api:$IMAGE_TAG"
 
-      - name: Verify deployment and publish URLs
+      - name: Verify deployment
         env:
-          RESOURCE_GROUP: ${{ needs.infrastructure.outputs.resource_group }}
-          CONTAINER_APP: ${{ needs.infrastructure.outputs.app_name }}
+          RESOURCE_GROUP: ${{ needs.apply.outputs.resource_group }}
+          CONTAINER_APP: ${{ needs.apply.outputs.app_name }}
         run: |
           URL=$(az containerapp show \
             --name "$CONTAINER_APP" \
@@ -159,24 +229,20 @@ jobs:
 
           for attempt in {1..24}; do
             INFO=$(curl --fail --silent --max-time 5 "https://$URL/api/info" || true)
-
             if echo "$INFO" | jq --exit-status \
               --arg commit "$GITHUB_SHA" \
               '.commit == $commit and .environment == "dev"' > /dev/null 2>&1; then
               break
             fi
-
             if [ "$attempt" -eq 24 ]; then
               echo "Timed out waiting for the deployed commit."
               exit 1
             fi
-
             sleep 10
           done
 
           curl --fail --silent --show-error "https://$URL/health"
           echo "$INFO" | jq .
-
           {
             echo "API: https://$URL"
             echo "Health: https://$URL/health"

@@ -26,9 +26,9 @@ jobs:
           npm test 2>&1 | tee "$RUNNER_TEMP/api-test-output.txt"
           {
             echo "### API test results"
-            echo '```text'
+            echo '~~~text'
             cat "$RUNNER_TEMP/api-test-output.txt"
-            echo '```'
+            echo '~~~'
           } >> "$GITHUB_STEP_SUMMARY"
 
       - uses: hashicorp/setup-terraform@v4
@@ -55,12 +55,15 @@ jobs:
         with:
           directory: infra
           framework: terraform
-          soft_fail: true
+          soft_fail: false
+          # Keep only documented POC exceptions non-blocking. Findings remain visible.
+          soft_fail_on: "CKV_AZURE_33,CKV_AZURE_59,CKV_AZURE_206,CKV_AZURE_139,CKV_AZURE_167,CKV_AZURE_165,CKV_AZURE_233,CKV_AZURE_166,CKV_AZURE_237,CKV_AZURE_164,CKV2_AZURE_38,CKV2_AZURE_41,CKV2_AZURE_40,CKV2_AZURE_33,CKV2_AZURE_21,CKV2_AZURE_1"
 
       - name: Scan configuration with Trivy
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: config
           scan-ref: .
+          trivyignores: .trivyignore.yaml
           severity: HIGH,CRITICAL
-          exit-code: "0"
+          exit-code: "1"
