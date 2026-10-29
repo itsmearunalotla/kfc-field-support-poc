@@ -216,7 +216,7 @@ jobs:
             --resource-group "$RESOURCE_GROUP" \
             --image "$REGISTRY_LOGIN_SERVER/field-support-api:$IMAGE_TAG"
 
-      - name: Verify deployment
+      - name: Verify deployment and ticket storage
         env:
           RESOURCE_GROUP: ${{ needs.apply.outputs.resource_group }}
           CONTAINER_APP: ${{ needs.apply.outputs.app_name }}
@@ -232,10 +232,13 @@ jobs:
             if echo "$INFO" | jq --exit-status \
               --arg commit "$GITHUB_SHA" \
               '.commit == $commit and .environment == "dev"' > /dev/null 2>&1; then
-              break
+              TICKETS=$(curl --fail --silent --max-time 5 "https://$URL/api/tickets" || true)
+              if echo "$TICKETS" | jq --exit-status '.tickets | type == "array"' > /dev/null 2>&1; then
+                break
+              fi
             fi
             if [ "$attempt" -eq 24 ]; then
-              echo "Timed out waiting for the deployed commit."
+              echo "API revision or ticket storage did not become ready."
               exit 1
             fi
             sleep 10
