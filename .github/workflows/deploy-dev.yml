@@ -76,7 +76,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
           fingerprint=$(terraform -chdir=infra show -json tfplan | jq -S \
-            '[.resource_changes[]? | {address, actions: .change.actions, before: .change.before, after: .change.after, after_unknown: .change.after_unknown}]' \
+            '{resource_changes: [.resource_changes[]? | {address, change}], output_changes: .output_changes}' \
             | sha256sum | cut -d ' ' -f 1)
           echo "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
 
@@ -132,7 +132,7 @@ jobs:
         run: |
           terraform -chdir=infra plan -input=false -var-file=dev.tfvars -out=tfplan
           fingerprint=$(terraform -chdir=infra show -json tfplan | jq -S \
-            '[.resource_changes[]? | {address, actions: .change.actions, before: .change.before, after: .change.after, after_unknown: .change.after_unknown}]' \
+            '{resource_changes: [.resource_changes[]? | {address, change}], output_changes: .output_changes}' \
             | sha256sum | cut -d ' ' -f 1)
 
           if [ "$fingerprint" != "$EXPECTED_PLAN_FINGERPRINT" ]; then
