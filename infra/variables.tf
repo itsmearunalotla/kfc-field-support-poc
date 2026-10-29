@@ -32,3 +32,9 @@ variable "app_version" {
   type        = string
   default     = "1.0.0"
 }
+
+variable "resource_group_name" {
+  description = "Existing resource group for the POC resources."
+  type        = string
+  default     = "ekfc-fs-dev-rg"
+}

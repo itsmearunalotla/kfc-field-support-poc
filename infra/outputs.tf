@@ -1,5 +1,5 @@
 output "resource_group_name" {
-  value = azurerm_resource_group.poc.name
+  value = data.azurerm_resource_group.poc.name
 }
 
 output "registry_name" {
@@ -9,6 +9,7 @@ output "registry_name" {
 output "registry_login_server" {
   value = azurerm_container_registry.poc.login_server
 }
+
 output "container_app_name" {
   value = azurerm_container_app.api.name
 }
