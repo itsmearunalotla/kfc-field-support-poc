@@ -55,10 +55,7 @@ The Terraform plan is published in the Actions run summary before the apply job.
 
 ### Security scan policy
 
-Checkov and Trivy fail the workflow on new findings. Existing POC exceptions remain visible in scan output and are limited to:
-
-- Checkov controls for public endpoints needed by GitHub-hosted runners, low-cost LRS replication, unused services, and Premium-only ACR features. See the explicit IDs in `.github/workflows/build.yml`.
-- Trivy `AZU-0012` for the state storage account's public endpoint. State access uses Entra ID/OIDC and a private Blob container; the exception is scoped to `infra/bootstrap-state/main.tf` in `.trivyignore.yaml`. Use a private runner/VNet to remove it.
+Checkov and Trivy fail the workflow on new findings. The existing, visible POC exceptions are listed with their rationale in [docs/security-exceptions.md](docs/security-exceptions.md). Trivy's `AZU-0012` exception is scoped to the state account file; use a private runner/VNet to remove it.
 
 The image scan blocks on HIGH and CRITICAL vulnerabilities. Review and update the exception list when the POC architecture changes.
 
