@@ -5,6 +5,7 @@ const { randomUUID } = require('node:crypto');
 
 const appName = process.env.APP_NAME || 'ekfc-field-support-api';
 const version = process.env.APP_VERSION || '1.0.0';
+const commit = process.env.APP_COMMIT || 'unknown';
 const environment = process.env.APP_ENV || 'dev';
 const port = Number(process.env.PORT || 3000);
 const maxRequestBytes = 16 * 1024;
@@ -56,6 +57,7 @@ function createServer() {
       sendJson(res, 200, {
         name: appName,
         version,
+        commit,
         environment
       });
       return;

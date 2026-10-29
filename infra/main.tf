@@ -112,20 +112,40 @@ resource "azurerm_container_app" "api" {
     min_replicas = 0
     max_replicas = 2
 
+    http_scale_rule {
+      name                = "http-requests"
+      concurrent_requests = "10"
+    }
+
     container {
       name   = "api"
       image  = "mcr.microsoft.com/azuredocs/containerapps-helloworld:latest"
       cpu    = 0.25
       memory = "0.5Gi"
 
-      env {
-        name  = "APP_NAME"
-        value = var.app_name
+      liveness_probe {
+        transport               = "HTTP"
+        port                    = 3000
+        path                    = "/health"
+        initial_delay           = 10
+        interval_seconds        = 30
+        timeout                 = 5
+        failure_count_threshold = 3
+      }
+
+      readiness_probe {
+        transport               = "HTTP"
+        port                    = 3000
+        path                    = "/health"
+        interval_seconds        = 10
+        timeout                 = 5
+        failure_count_threshold = 3
+        success_count_threshold = 1
       }
 
       env {
-        name  = "APP_VERSION"
-        value = var.app_version
+        name  = "APP_NAME"
+        value = var.app_name
       }
 
       env {
