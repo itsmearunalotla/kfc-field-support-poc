@@ -34,6 +34,23 @@ resource "azurerm_container_registry" "poc" {
   tags                = local.tags
 }
 
+resource "azurerm_storage_account" "tickets" {
+  name                     = "ekfc${substr(replace(var.name_prefix, "-", ""), 0, 8)}${random_string.suffix.result}data"
+  resource_group_name      = azurerm_resource_group.poc.name
+  location                 = azurerm_resource_group.poc.location
+  account_kind             = "StorageV2"
+  account_tier             = "Standard"
+  account_replication_type = "LRS"
+
+  https_traffic_only_enabled      = true
+  min_tls_version                 = "TLS1_2"
+  allow_nested_items_to_be_public = false
+  shared_access_key_enabled       = false
+  public_network_access_enabled   = true
+
+  tags = local.tags
+}
+
 resource "azurerm_log_analytics_workspace" "poc" {
   name                = "${local.base_name}-law"
   location            = azurerm_resource_group.poc.location
@@ -66,10 +83,24 @@ resource "azurerm_user_assigned_identity" "pull" {
   tags                = local.tags
 }
 
+resource "azurerm_user_assigned_identity" "tickets" {
+  name                = "${local.base_name}-tickets"
+  location            = azurerm_resource_group.poc.location
+  resource_group_name = azurerm_resource_group.poc.name
+  tags                = local.tags
+}
+
 resource "azurerm_role_assignment" "acr_pull" {
   scope                = azurerm_container_registry.poc.id
   role_definition_name = "AcrPull"
   principal_id         = azurerm_user_assigned_identity.pull.principal_id
+  principal_type       = "ServicePrincipal"
+}
+
+resource "azurerm_role_assignment" "tickets_table_data" {
+  scope                = azurerm_storage_account.tickets.id
+  role_definition_name = "Storage Table Data Contributor"
+  principal_id         = azurerm_user_assigned_identity.tickets.principal_id
   principal_type       = "ServicePrincipal"
 }
 
@@ -88,8 +119,11 @@ resource "azurerm_container_app" "api" {
   }
 
   identity {
-    type         = "UserAssigned"
-    identity_ids = [azurerm_user_assigned_identity.pull.id]
+    type = "UserAssigned"
+    identity_ids = [
+      azurerm_user_assigned_identity.pull.id,
+      azurerm_user_assigned_identity.tickets.id
+    ]
   }
 
   registry {
@@ -157,8 +191,26 @@ resource "azurerm_container_app" "api" {
         name  = "PORT"
         value = "3000"
       }
+
+      env {
+        name  = "TICKETS_TABLE_ENDPOINT"
+        value = azurerm_storage_account.tickets.primary_table_endpoint
+      }
+
+      env {
+        name  = "TICKETS_TABLE_NAME"
+        value = "tickets"
+      }
+
+      env {
+        name  = "AZURE_CLIENT_ID"
+        value = azurerm_user_assigned_identity.tickets.client_id
+      }
     }
   }
 
-  depends_on = [azurerm_role_assignment.acr_pull]
+  depends_on = [
+    azurerm_role_assignment.acr_pull,
+    azurerm_role_assignment.tickets_table_data
+  ]
 }
