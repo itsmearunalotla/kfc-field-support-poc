@@ -2,7 +2,7 @@
 
 A small Node.js API deployed to Azure Container Apps. This nonproduction proof of concept demonstrates Terraform, GitHub Actions, GitHub OIDC authentication, container image scanning, and Azure deployment.
 
-Tickets are stored in Azure Table Storage in Azure. The app uses a managed identity and Microsoft Entra authorization; no storage key is used by the API. Local runs use an in-memory store, so local ticket data is temporary.
+Tickets are stored in Azure Table Storage. The app uses a managed identity and Microsoft Entra authorization; no storage key is used by the API. Local runs use an in-memory store, so local ticket data is temporary.
 
 ## Architecture
 
@@ -81,11 +81,12 @@ terraform -chdir=infra/bootstrap-state apply -var="subscription_id=<AZURE_SUBSCR
 terraform -chdir=infra/bootstrap-state output -raw state_storage_account_name
 ```
 
-Save the storage account name returned by the last command. Create or use a GitHub Actions identity with a federated credential for:
+Save the storage account name returned by the last command. Create or use a GitHub Actions identity with these two federated credentials:
 
-- Subject: `repo:<OWNER>/<REPO>:ref:refs/heads/main`
-- Issuer: `https://token.actions.githubusercontent.com`
-- Audience: `api://AzureADTokenExchange`
+- Subject for plan and deployment jobs: `repo:<OWNER>/<REPO>:ref:refs/heads/main`
+- Subject for the approval-gated apply job: `repo:<OWNER>/<REPO>:environment:dev-apply`
+- Issuer for both: `https://token.actions.githubusercontent.com`
+- Audience for both: `api://AzureADTokenExchange`
 
 Assign the GitHub Actions identity these roles:
 
