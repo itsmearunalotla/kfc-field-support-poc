@@ -16,14 +16,19 @@ locals {
   }
 }
 
-data "azurerm_resource_group" "poc" {
-  name = var.resource_group_name
+resource "azurerm_resource_group" "poc" {
+  name     = var.resource_group_name
+  location = var.location
+
+  tags = merge(local.tags, {
+    purpose = "application"
+  })
 }
 
 resource "azurerm_container_registry" "poc" {
   name                = replace("${var.name_prefix}${random_string.suffix.result}", "-", "")
-  resource_group_name = data.azurerm_resource_group.poc.name
-  location            = data.azurerm_resource_group.poc.location
+  resource_group_name = azurerm_resource_group.poc.name
+  location            = azurerm_resource_group.poc.location
   sku                 = "Standard"
   admin_enabled       = false
   tags                = local.tags
@@ -31,8 +36,8 @@ resource "azurerm_container_registry" "poc" {
 
 resource "azurerm_log_analytics_workspace" "poc" {
   name                = "${local.base_name}-law"
-  location            = data.azurerm_resource_group.poc.location
-  resource_group_name = data.azurerm_resource_group.poc.name
+  location            = azurerm_resource_group.poc.location
+  resource_group_name = azurerm_resource_group.poc.name
   sku                 = "PerGB2018"
   retention_in_days   = 30
   tags                = local.tags
@@ -40,22 +45,24 @@ resource "azurerm_log_analytics_workspace" "poc" {
 
 resource "azurerm_container_app_environment" "poc" {
   name                       = "${local.base_name}-cae"
-  location                   = data.azurerm_resource_group.poc.location
-  resource_group_name        = data.azurerm_resource_group.poc.name
+  location                   = azurerm_resource_group.poc.location
+  resource_group_name        = azurerm_resource_group.poc.name
   log_analytics_workspace_id = azurerm_log_analytics_workspace.poc.id
+
   workload_profile {
     name                  = "Consumption"
     workload_profile_type = "Consumption"
     maximum_count         = 0
     minimum_count         = 0
   }
+
   tags = local.tags
 }
 
 resource "azurerm_user_assigned_identity" "pull" {
   name                = "${local.base_name}-pull"
-  location            = data.azurerm_resource_group.poc.location
-  resource_group_name = data.azurerm_resource_group.poc.name
+  location            = azurerm_resource_group.poc.location
+  resource_group_name = azurerm_resource_group.poc.name
   tags                = local.tags
 }
 
@@ -69,10 +76,11 @@ resource "azurerm_role_assignment" "acr_pull" {
 resource "azurerm_container_app" "api" {
   name                         = "${local.base_name}-api"
   container_app_environment_id = azurerm_container_app_environment.poc.id
-  resource_group_name          = data.azurerm_resource_group.poc.name
+  resource_group_name          = azurerm_resource_group.poc.name
   revision_mode                = "Single"
   workload_profile_name        = "Consumption"
   tags                         = local.tags
+
   lifecycle {
     ignore_changes = [
       template[0].container[0].image
