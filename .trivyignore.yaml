@@ -5,3 +5,4 @@ misconfigurations:
   - id: AZU-0012
     paths:
       - infra/bootstrap-state/main.tf
+      - infra/main.tf
