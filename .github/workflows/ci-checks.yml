@@ -1,4 +1,4 @@
-name: Build and Checks
+name: ci checks
 
 on:
   pull_request:

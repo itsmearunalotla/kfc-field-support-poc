@@ -18,7 +18,7 @@ concurrency:
 jobs:
   checks:
     name: Run checks
-    uses: ./.github/workflows/build.yml
+    uses: ./.github/workflows/ci-checks.yml
 
   plan:
     name: Plan Azure changes
